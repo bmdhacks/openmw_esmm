@@ -21,6 +21,20 @@ enum class ScriptOptionType {
     UNKNOWN
 };
 
+// --- NEW ---
+enum class ScriptType {
+    UTILITY,
+    EXTRA,
+    TWEAK
+};
+
+enum class ArgType {
+    RUN,
+    INSTALL,
+    UPDATE,
+    UNINSTALL
+};
+
 struct ScriptOption {
     std::string name;
     ScriptOptionType type = ScriptOptionType::UNKNOWN;
@@ -31,10 +45,14 @@ struct ScriptOption {
 
 struct ScriptDefinition {
     fs::path script_path;
+    ScriptType type = ScriptType::UTILITY; // NEW
     std::string title = "Untitled Script";
     std::string author = "Unknown";
     std::string description;
-    std::string args_template;
+    
+    // Argument templates
+    std::map<ArgType, std::string> args_templates; // NEW map
+    
     bool has_output = true;
     bool has_progress = false;
     bool can_cancel = false;
@@ -43,25 +61,30 @@ struct ScriptDefinition {
     int priority = 1000;
 
     std::vector<ScriptOption> config_options;
+
+    // --- NEW for Extras ---
+    fs::path installed_location;
 };
 
 class ScriptManager {
 public:
-    void scan_scripts(const fs::path& scripts_dir);
+    void scan_all_scripts(const AppContext& ctx);
     void load_options(const fs::path& options_file);
     void save_options(const fs::path& options_file);
 
     std::string build_command_string(
         ScriptDefinition& script,
         const AppContext& ctx,
-        const std::map<std::string, std::string>& extra_vars = {} // NEW
+        ArgType arg_type = ArgType::RUN,
+        const std::map<std::string, std::string>& extra_vars = {}
     );
 
     const std::vector<ScriptDefinition>& get_all_scripts() const { return m_scripts; }
-    std::vector<ScriptDefinition>& get_all_scripts_mut() { return m_scripts; } // NEW
+    std::vector<ScriptDefinition>& get_all_scripts_mut() { return m_scripts; }
 
     ScriptDefinition* get_script_by_path(const fs::path& script_path);
     std::vector<ScriptDefinition*> get_scripts_by_registration(ScriptRegistration registration);
+    std::vector<ScriptDefinition*> get_scripts_by_type(ScriptType type); // NEW
 
     fs::path get_active_data_sorter_path() const { return m_active_data_sorter; }
     fs::path get_active_content_sorter_path() const { return m_active_content_sorter; }
@@ -71,6 +94,7 @@ public:
     void set_active_content_verifier_path(const fs::path& script_path);
 
 private:
+    void scan_directory(const fs::path& scripts_dir, ScriptType type); // NEW private helper
     std::vector<ScriptDefinition> m_scripts;
     fs::path m_options_file;
 
@@ -78,4 +102,3 @@ private:
     fs::path m_active_content_sorter;
     fs::path m_active_content_verifier;
 };
-

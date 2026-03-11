@@ -1,10 +1,13 @@
 #include "Utils.h"
 #include "../AppContext.h"
+#include "Logger.h"
 
 #include <cstdlib>
 #include <regex>
 #include <algorithm>
 #include <boost/filesystem.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/classification.hpp>
 
 namespace fs = boost::filesystem;
 
@@ -21,6 +24,29 @@ std::string getEnvVar(const std::string& name, const std::string& default_val)
 {
     const char* value = std::getenv(name.c_str());
     return value ? value : default_val;
+}
+
+
+fs::path find_executable_on_path(const std::string& name) {
+    std::string path_env = getEnvVar("PATH", "");
+    if (path_env.empty()) {
+        return "";
+    }
+
+    std::vector<std::string> directories;
+    boost::split(directories, path_env, boost::is_any_of(":"));
+
+    for (const auto& dir : directories) {
+        fs::path full_path = fs::path(dir) / name;
+        // Check if the file exists and is executable
+        boost::system::error_code ec;
+        if (fs::exists(full_path, ec) && !ec && fs::is_regular_file(full_path, ec) && !ec) {
+             // This is a basic check; a more robust one might check execute permissions
+             return full_path;
+        }
+    }
+
+    return ""; // Not found
 }
 
 

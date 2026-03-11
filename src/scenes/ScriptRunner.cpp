@@ -11,13 +11,14 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fstream>
+#include <signal.h> // For kill()
 
 // --- ScriptRunner Base Class ---
 
 ScriptRunner::ScriptRunner(StateMachine& machine, ScriptDefinition& script)
     : m_state_machine(machine), m_script(script) {}
 
-void ScriptRunner::run(const std::map<std::string, std::string>& extra_vars, bool use_temp_cfg) {
+void ScriptRunner::run(ArgType arg_type, const std::map<std::string, std::string>& extra_vars, bool use_temp_cfg) {
     auto& engine = m_state_machine.get_engine();
     auto& ctx = m_state_machine.get_context();
     
@@ -42,7 +43,7 @@ void ScriptRunner::run(const std::map<std::string, std::string>& extra_vars, boo
         final_vars["$OPENMW_CFG"] = temp_cfg_path.string();
     }
     
-    std::string command_str = engine.get_script_manager_mut()->build_command_string(m_script, ctx, final_vars);
+    std::string command_str = engine.get_script_manager_mut()->build_command_string(m_script, ctx, arg_type, final_vars);
     command_str += " 2>&1";
 
     int pipe_fd[2];
@@ -60,12 +61,13 @@ void ScriptRunner::run(const std::map<std::string, std::string>& extra_vars, boo
     }
 
     if (m_pid == 0) { // Child process
+        setpgid(0, 0);
+        
         close(pipe_fd[0]);
         dup2(pipe_fd[1], STDOUT_FILENO);
         dup2(pipe_fd[1], STDERR_FILENO);
         close(pipe_fd[1]);
         
-        // Use /bin/sh -c to handle complex commands and arguments correctly
         execl("/bin/sh", "sh", "-c", command_str.c_str(), (char*) NULL);
         _exit(127); // If execl fails
     }
@@ -77,24 +79,22 @@ void ScriptRunner::run(const std::map<std::string, std::string>& extra_vars, boo
 
     FILE* pipe_stream = fdopen(pipe_fd[0], "r");
 
-    // --- THIS IS THE NEW, ROBUST READING LOOP ---
     std::string line_buffer;
     std::string full_output;
     int ch;
     while ((ch = fgetc(pipe_stream)) != EOF) {
         full_output += static_cast<char>(ch);
-        if (ch == '\n') { // Only process on newline
+        if (ch == '\n') {
             parse_line(line_buffer);
             line_buffer.clear();
-        } else if (ch != '\r') { // Ignore carriage returns
+        } else if (ch != '\r') {
             line_buffer += static_cast<char>(ch);
         }
     }
 
-    if (!line_buffer.empty()) { // Process final line if no trailing newline
+    if (!line_buffer.empty()) {
         parse_line(line_buffer);
     }
-    // --- END OF NEW LOOP ---
 
     int status;
     waitpid(m_pid, &status, 0);
@@ -107,30 +107,28 @@ void ScriptRunner::run(const std::map<std::string, std::string>& extra_vars, boo
     if (use_temp_cfg) {
         m_result.modified_cfg_path = std::make_unique<fs::path>(temp_dir / "openmw.cfg");
     }
-    
-    // Temp dir cleanup now belongs to the caller of the synchronous run
-    // for (auto runner) we'll handle it there. For UIScenes, the scene exit handles it.
-    // For simplicity, we'll keep cleanup here for now.
-
-    // FUCK YOU.
-    // if (!temp_dir.empty()) {
-    //     fs::remove_all(temp_dir);
-    // }
 }
 
 void ScriptRunner::request_cancellation() {
-    if (m_cancel_state == CancelState::NONE && !m_cancel_file_path.empty()) {
-        LOG_INFO("Cancellation requested. Creating cancel file: ", m_cancel_file_path.string());
+    if (m_cancel_state == CancelState::NONE) {
+        LOG_INFO("Cancellation requested for process group: ", m_pid);
         m_cancel_state = CancelState::REQUESTED;
         m_cancel_request_time = std::chrono::steady_clock::now();
-        std::ofstream cancel_file(m_cancel_file_path.string());
-        cancel_file.close();
+        
+        if (!m_cancel_file_path.empty()) {
+            std::ofstream cancel_file(m_cancel_file_path.string());
+            cancel_file.close();
+        }
+
+        if (m_pid > 0) {
+            kill(-m_pid, SIGTERM);
+        }
     }
 }
 
 void ScriptRunner::kill_process() {
     if (m_pid > 0 && !m_is_finished) {
-        LOG_WARN("Force killing process group with PID: ", m_pid);
+        LOG_WARN("Force killing process group with PGID: ", m_pid);
         kill(-m_pid, SIGKILL);
         m_cancel_state = CancelState::KILLED;
     }
@@ -185,7 +183,6 @@ void ScriptRunner::parse_line(const std::string& line) {
 
 
 void ScriptRunner::on_line_received(const std::string& line) {
-    // We trim here to avoid printing empty lines with just [SCRIPT]
     std::string trimmed = line;
     trimmed.erase(0, trimmed.find_first_not_of(" \t\r\n"));
     if (!trimmed.empty()) {
@@ -208,9 +205,6 @@ void ScriptRunner::on_finish(int return_code) {
 void HeadlessScriptRunner::on_alert(const AlertInfo& alert) {
     m_alert_triggered = true;
     LOG_WARN("[SCRIPT ALERT] [", alert.title, "]: ", alert.message);
-
-    // This may be called from a background thread. The StateMachine must be thread-safe.
-    // We no longer block waiting for the alert to close, which fixes a deadlock.
     auto alert_scene = std::make_unique<AlertScene>(m_state_machine, alert.title, alert.message);
     m_state_machine.push_scene(std::move(alert_scene));
 }
@@ -219,11 +213,9 @@ void HeadlessScriptRunner::on_alert(const AlertInfo& alert) {
 UIScriptRunner::UIScriptRunner(StateMachine& machine, ScriptDefinition& script)
     : ScriptRunner(machine, script) {}
 
-// NEW: Link the scene to the runner
 void UIScriptRunner::set_scene_ptr(ScriptRunnerScene* scene_ptr) {
     m_scene_ptr = scene_ptr;
 }
-
 
 void UIScriptRunner::on_line_received(const std::string& line) {
     ScriptRunner::on_line_received(line);
@@ -243,12 +235,12 @@ void UIScriptRunner::on_progress_update() {
 
 void UIScriptRunner::on_alert(const AlertInfo& alert) {
     if (m_scene_ptr) {
-        m_scene_ptr->m_alert = alert; // Just copy the whole struct
+        m_scene_ptr->m_alert = alert;
         m_scene_ptr->m_show_alert = true;
     }
 }
 
 void UIScriptRunner::on_finish(int return_code) {
-    ScriptRunner::on_finish(return_code); // Call base implementation
+    ScriptRunner::on_finish(return_code);
     if (m_scene_ptr) m_scene_ptr->m_is_finished = true;
 }

@@ -1,44 +1,45 @@
 #include "SettingsScene.h"
+#include "TweaksScene.h"
+#include "ExtrasScene.h"
+#include "ConfigBackupScene.h"
 #include "../core/StateMachine.h"
 #include "imgui.h"
 
-SettingsScene::SettingsScene(StateMachine& machine) : Scene(machine) {
-    m_options = {"(Nothing to configure yet)", "Back to Main Menu"};
-}
-
-void SettingsScene::handle_event(SDL_Event& e) {
-    // if ((e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_UP) || (e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP)) {
-    //     m_selected_index = (m_selected_index - 1 + m_options.size()) % m_options.size();
-    // }
-    // if ((e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_DOWN) || (e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)) {
-    //     m_selected_index = (m_selected_index + 1) % m_options.size();
-    // }
-    // if ((e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_RETURN) || (e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_A)) {
-    //     on_select();
-    // }
-    // // Allow 'B' button to go back
-    // if (e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_B) {
-    //     m_state_machine.pop_state();
-    // }
-}
-
-void SettingsScene::on_select() {
-    // Both options currently just go back
-    m_state_machine.pop_state();
-}
+SettingsScene::SettingsScene(StateMachine& machine) : Scene(machine) {}
 
 void SettingsScene::render() {
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
-    
-    // Simple menu rendering
-    for (size_t i = 0; i < m_options.size(); ++i) {
-        if (ImGui::Selectable(m_options[i].c_str(), m_selected_index == (int)i)) {
-            m_selected_index = i;
-            on_select();
-        }
+
+    ImGui::Text("Settings");
+    ImGui::Separator();
+
+    // Tweaks Manager (Disabled)
+    ImGui::BeginDisabled();
+    if (ImGui::Button("Tweaks Manager", ImVec2(-1, 40))) {
+        // m_state_machine.push_scene(std::make_unique<TweaksScene>(m_state_machine));
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("This feature is coming soon.");
+    }
+
+    // Extras Manager
+    if (ImGui::Button("Extras Manager", ImVec2(-1, 40))) {
+        m_state_machine.push_scene(std::make_unique<ExtrasScene>(m_state_machine));
+    }
+
+    // Config Backup
+    if (ImGui::Button("Config Backup / Restore", ImVec2(-1, 40))) {
+        m_state_machine.push_scene(std::make_unique<ConfigBackupScene>(m_state_machine));
     }
     
+    ImGui::Separator();
+
+    if (ImGui::Button("Back to Main Menu", ImVec2(-1, 40))) {
+        m_state_machine.pop_state();
+    }
+
     ImGui::End();
 }

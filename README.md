@@ -93,24 +93,6 @@ Better *=7001
 
 # 9000 - Everything else (catch-all)
 *=9000
-
-##
-## Content File (Plugin) Sorting Rules
-##
-[content]
-# Core files.
-Morrowind.esm=0
-Tribunal.esm=1
-Bloodmoon.esm=2
-# 1000 - Master Files and their patches
-Patch for Purists.esm=1000
-Patch for Purists*.ESP=1001
-
-# 7000 - Body & Armor Plugins
-Better*=7000
-
-# 9000 - Everything else (catch-all)
-*=9000
 ```
 
 ## Dependencies

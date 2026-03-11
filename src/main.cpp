@@ -44,29 +44,21 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // --- Get Base Path from Executable Location ---
-    // This is much more reliable than using "."
-    fs::path base_path;
-    if (argc > 0 && argv[0]) {
-        base_path = fs::system_complete(argv[0]).parent_path();
-    } else {
-        base_path = fs::current_path();
-    }
-
-    std::cout << "Base path detected as: " << base_path.string() << std::endl;
-
     // --- Command-Line Argument Parsing ---
     po::options_description desc("Allowed options");
     desc.add_options()
-        ("help",                                   "show help message")
-        ("7zz",          po::value<std::string>(), "Path to 7zzs executable")
-        ("mod-archives", po::value<std::string>(), "Path to mod archives directory (e.g., mods/)")
-        ("mod-data",     po::value<std::string>(), "Path to extracted mod data directory (e.g., mod_data/)")
-        ("config-file",  po::value<std::string>(), "Path to openmw.cfg file")
-        ("config-dir",   po::value<std::string>(), "Directory for esmm configs (ini, mlox)")
-        ("quiet",                                  "Quieten down logging")
-        ("verbose",                                "Enable verbose debug logging")
-    ;
+        ("help", "show help message")
+        ("7zz", po::value<std::string>(), "Path to 7zzs executable")
+        ("base-dir", po::value<std::string>(), "Base directory for all relative paths")
+        ("mod-archive-dir", po::value<std::string>(), "Directory for mod archives")
+        ("mod-data-dir", po::value<std::string>(), "Directory for extracted mod data")
+        ("openmw-cfg-dir", po::value<std::string>(), "Directory containing openmw.cfg")
+        ("esmm-cfg-dir", po::value<std::string>(), "Directory for esmm configs (ini)")
+        ("esmm-utils-dir", po::value<std::string>(), "Directory for esmm utility scripts")
+        ("esmm-tweaks-dir", po::value<std::string>(), "Directory for esmm tweak scripts")
+        ("esmm-extras-dir", po::value<std::string>(), "Directory for esmm extra scripts")
+        ("quiet", "Quieten down logging")
+        ("verbose", "Enable verbose debug logging");
 
     po::variables_map vm;
     po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -79,20 +71,58 @@ int main(int argc, char* argv[]) {
 
     if (vm.count("quiet")) {
         Logger::get().set_level(LogLevel::WARN);
-        // LOG_DEBUG("Quieten logging enabled.");
     }
-
     if (vm.count("verbose")) {
         Logger::get().set_level(LogLevel::DEBUG);
         LOG_DEBUG("Verbose logging enabled.");
     }
 
     AppContext ctx;
-    ctx.path_config_dir      = vm.count("config-dir")   ? fs::path(vm["config-dir"].as<std::string>())  : base_path;
-    ctx.path_mod_data        = vm.count("mod-data")     ? fs::path(vm["mod-data"].as<std::string>())    : base_path / "mod_data/";
-    ctx.path_openmw_cfg      = vm.count("config-file")  ? fs::path(vm["config-file"].as<std::string>()) : base_path / "openmw.cfg";
-    ctx.exec_7zz             = vm.count("7zz")          ? fs::path(vm["7zz"].as<std::string>())          : base_path / "7zzs";
-    ctx.path_mod_archives    = vm.count("mod-archives") ? fs::path(vm["mod-archives"].as<std::string>()) : base_path / "mods/";
+    // --- Path Initialization ---
+    // 1. Establish the base path (defaults to current working directory)
+    ctx.path_base = vm.count("base-dir") ? fs::path(vm["base-dir"].as<std::string>()) : fs::current_path();
+
+    // Helper lambda to resolve paths
+    auto resolve_path = [&](const std::string& arg_name, const fs::path& default_path) {
+        if (vm.count(arg_name)) {
+            fs::path p(vm[arg_name].as<std::string>());
+            return p.is_absolute() ? p : fs::absolute(p, ctx.path_base);
+        }
+        return default_path;
+    };
+
+    // 2. Resolve all other paths based on the base path or command-line overrides
+    ctx.path_esmm_cfg    = resolve_path("esmm-cfg-dir",    ctx.path_base / "esmm/");
+    ctx.path_esmm_utils  = resolve_path("esmm-utils-dir",  ctx.path_esmm_cfg / "utils/");
+    ctx.path_esmm_tweaks = resolve_path("esmm-tweaks-dir", ctx.path_esmm_cfg / "tweaks/");
+    ctx.path_esmm_extras = resolve_path("esmm-extras-dir", ctx.path_esmm_cfg / "extras/");
+
+    ctx.path_mod_archives = resolve_path("mod-archive-dir", ctx.path_base / "mods/");
+    ctx.path_mod_data     = resolve_path("mod-data-dir",    ctx.path_base / "mod_data/");
+
+    // Special handling for openmw.cfg itself, not just its directory
+    if (vm.count("openmw-cfg-dir")) {
+        fs::path p(vm["openmw-cfg-dir"].as<std::string>());
+        p = p.is_absolute() ? p : fs::absolute(p, ctx.path_base);
+        ctx.path_openmw_cfg = p / "openmw.cfg";
+    } else {
+        ctx.path_openmw_cfg = ctx.path_base / "openmw" / "openmw.cfg";
+    }
+
+    // 3. Find 7zz executable
+    if (vm.count("7zz")) {
+        ctx.exec_7zz = fs::path(vm["7zz"].as<std::string>());
+    } else {
+        ctx.exec_7zz = find_executable_on_path("7zzs");
+        if (ctx.exec_7zz.empty()) {
+             ctx.exec_7zz = find_executable_on_path("7z"); // Fallback
+        }
+    }
+
+    if (!fs::exists(ctx.exec_7zz)) {
+        LOG_ERROR("Could not find 7zzs or 7z executable. Please place '7zzs' in the base directory or install 7-zip and ensure it's in your PATH. You can also specify the path with --7zz.");
+        // We don't exit here, but extraction will fail later if attempted.
+    }
 
     SDL_DisplayMode dm;
     if (SDL_GetDesktopDisplayMode(0, &dm) != 0) {

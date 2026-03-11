@@ -149,8 +149,8 @@ void ModEngine::initialize() {
     }
 
     // 1. Load support systems and initial config
-    m_script_manager.scan_scripts(m_app_context.path_config_dir / "scripts");
-    m_script_manager.load_options(m_app_context.path_config_dir / "openmw_esmm_options.cfg");
+    m_script_manager.scan_all_scripts(m_app_context);
+    m_script_manager.load_options(m_app_context.path_esmm_cfg / "options.ini");
     m_config_manager.load(m_app_context.path_openmw_cfg);
     
     const auto& loaded_cfg = m_config_manager.get_loaded_data();
@@ -384,7 +384,7 @@ void ModEngine::run_active_sorter(ScriptRegistration type) {
     if (!script) return;
 
     HeadlessScriptRunner runner(*m_state_machine, *script);
-    runner.run({}, true);
+    runner.run(ArgType::RUN, {}, true); // THE FIX
     const ScriptRunResult& result = runner.get_result();
 
     // This is the variable we need to clean up
@@ -459,11 +459,11 @@ void ModEngine::run_active_verifier() {
     // Verifier needs a temp config, but also a UI.
     if (script->has_output) {
         auto runner = std::make_shared<UIScriptRunner>(*m_state_machine, *script);
-        auto scene = std::make_unique<ScriptRunnerScene>(*m_state_machine, runner, *script, true); // Pass use_temp_cfg=true
+        auto scene = std::make_unique<ScriptRunnerScene>(*m_state_machine, runner, *script, true);
         m_state_machine->push_scene(std::move(scene));
     } else {
         HeadlessScriptRunner runner(*m_state_machine, *script);
-        runner.run({}, true);
+        runner.run(ArgType::RUN, {}, true); // THE FIX
     }
 }
 

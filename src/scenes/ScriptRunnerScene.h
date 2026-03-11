@@ -8,17 +8,23 @@ class UIScriptRunner;
 
 class ScriptRunnerScene : public Scene {
 public:
-    ScriptRunnerScene(StateMachine& machine, std::shared_ptr<UIScriptRunner> owner, ScriptDefinition& script, bool use_temp_cfg);
+    ScriptRunnerScene(
+        StateMachine& machine,
+        std::shared_ptr<UIScriptRunner> owner,
+        ScriptDefinition& script,
+        bool use_temp_cfg,
+        ArgType arg_type = ArgType::RUN
+    );
 
     void on_enter() override;
-
     void render() override;
 
 private:
-    friend class UIScriptRunner; // Allow owner to access private members
+    friend class UIScriptRunner;
 
-    std::shared_ptr<UIScriptRunner> m_owner; // Scene OWNS the runner
+    std::shared_ptr<UIScriptRunner> m_owner;
     ScriptDefinition& m_script;
+    ArgType m_arg_type; // NEW
 
     std::mutex m_log_mutex;
     std::vector<std::string> m_log_lines;
@@ -27,7 +33,7 @@ private:
     ProgressState m_progress;
     AlertInfo m_alert;
 
-    bool m_use_temp_cfg; // Add member
+    bool m_use_temp_cfg;
     bool m_is_finished = false;
     bool m_show_alert = false;
 };

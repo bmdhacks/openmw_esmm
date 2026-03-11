@@ -15,18 +15,20 @@ struct AppContext {
     TTF_Font* font = nullptr;
     SDL_GameController* controller = nullptr;
     ModEngine* engine = nullptr;
-
     bool running = true;
     int exit_code = 0;
+    bool is_momw_config = false;
 
     // Global Configuration Paths
     fs::path exec_7zz;
+    fs::path path_base;
     fs::path path_mod_archives;
     fs::path path_mod_data;
     fs::path path_openmw_cfg;
-    fs::path path_config_dir;
-
-    bool is_momw_config = false;
+    fs::path path_esmm_cfg;
+    fs::path path_esmm_utils;
+    fs::path path_esmm_tweaks;
+    fs::path path_esmm_extras;
 
     ~AppContext();
 };

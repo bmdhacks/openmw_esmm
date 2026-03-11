@@ -3,6 +3,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cctype>
+#include <sstream>
 
 // Helper to trim strings
 static std::string trim(const std::string& s) {
@@ -12,8 +13,38 @@ static std::string trim(const std::string& s) {
     return s.substr(first, (last - first + 1));
 }
 
-void ScriptManager::scan_scripts(const fs::path& scripts_dir) {
+void ScriptManager::scan_all_scripts(const AppContext& ctx) {
     m_scripts.clear();
+    scan_directory(ctx.path_esmm_utils, ScriptType::UTILITY);
+    scan_directory(ctx.path_esmm_extras, ScriptType::EXTRA);
+    scan_directory(ctx.path_esmm_tweaks, ScriptType::TWEAK);
+    LOG_INFO("Found a total of ", m_scripts.size(), " scripts.");
+
+    // Auto-select first available sorter if none is set
+    if (m_active_data_sorter.empty()) {
+        auto sorters = get_scripts_by_registration(ScriptRegistration::SORT_DATA);
+        if (!sorters.empty()) {
+            m_active_data_sorter = sorters[0]->script_path;
+            LOG_INFO("No active data sorter set. Defaulting to: ", m_active_data_sorter.filename().string());
+        }
+    }
+    if (m_active_content_sorter.empty()) {
+        auto sorters = get_scripts_by_registration(ScriptRegistration::SORT_CONTENT);
+        if (!sorters.empty()) {
+            m_active_content_sorter = sorters[0]->script_path;
+            LOG_INFO("No active content sorter set. Defaulting to: ", m_active_content_sorter.filename().string());
+        }
+    }
+    if (m_active_content_verifier.empty()) {
+        auto verifiers = get_scripts_by_registration(ScriptRegistration::VERIFY);
+        if (!verifiers.empty()) {
+            m_active_content_verifier = verifiers[0]->script_path;
+            LOG_INFO("No active content verifier set. Defaulting to: ", m_active_content_verifier.filename().string());
+        }
+    }
+}
+
+void ScriptManager::scan_directory(const fs::path& scripts_dir, ScriptType type) {
     if (!fs::is_directory(scripts_dir)) return;
 
     LOG_INFO("Scanning for scripts in ", scripts_dir.string());
@@ -26,22 +57,21 @@ void ScriptManager::scan_scripts(const fs::path& scripts_dir) {
         ScriptDefinition script;
         script.script_path = entry.path();
         script.title = entry.path().stem().string(); // Default title
+        script.type = type;
 
         std::string line;
         bool in_comment_block = false;
         
-        // Read shebang
         std::getline(file, line);
         if (line.rfind("#!", 0) != 0) continue; // Not a script
 
         while (std::getline(file, line)) {
             std::string trimmed_line = trim(line);
             if (trimmed_line.empty()) {
-                if(in_comment_block) break; // End of metadata block
+                if(in_comment_block) break; 
                 else continue;
             }
 
-            // Check for start of comment
             bool is_comment = (trimmed_line.rfind("#", 0) == 0 || trimmed_line.rfind("//", 0) == 0);
             if (is_comment) {
                 in_comment_block = true;
@@ -59,14 +89,21 @@ void ScriptManager::scan_scripts(const fs::path& scripts_dir) {
                 if (key == "TITLE:") script.title = value;
                 else if (key == "AUTHOR:") script.author = value;
                 else if (key == "DESCRIPTION:") script.description = value;
-                else if (key == "ARGS:") script.args_template = value;
                 else if (key == "HAS_OUTPUT:") script.has_output = (value == "TRUE");
                 else if (key == "HAS_PROGRESS:") script.has_progress = (value == "TRUE");
                 else if (key == "CAN_CANCEL:") script.can_cancel = (value == "TRUE");
                 else if (key == "PRIORITY:") {
                     try { script.priority = std::stoi(value); }
-                    catch (...) { /* ignore invalid number */ }
+                    catch (...) { /* ignore */ }
                 }
+                // Argument templates
+                else if (key == "ARGS:") script.args_templates[ArgType::RUN] = value;
+                else if (key == "INSTALL_ARGS:") script.args_templates[ArgType::INSTALL] = value;
+                else if (key == "UPDATE_ARGS:") script.args_templates[ArgType::UPDATE] = value;
+                else if (key == "UNINSTALL_ARGS:") script.args_templates[ArgType::UNINSTALL] = value;
+                // Extra-specific
+                else if (key == "INSTALLED_LOCATION:") script.installed_location = fs::path(value);
+
                 else if (key == "REGISTER:") {
                     if (value == "RUN_BEFORE_LAUNCH") script.registration = ScriptRegistration::RUN_BEFORE_LAUNCH;
                     else if (value == "SORT_DATA") script.registration = ScriptRegistration::SORT_DATA;
@@ -107,30 +144,6 @@ void ScriptManager::scan_scripts(const fs::path& scripts_dir) {
         }
         m_scripts.push_back(script);
     }
-    LOG_INFO("Found ", m_scripts.size(), " scripts.");
-
-    // --- NEW: Auto-select first available sorter if none is set ---
-    if (m_active_data_sorter.empty()) {
-        auto sorters = get_scripts_by_registration(ScriptRegistration::SORT_DATA);
-        if (!sorters.empty()) {
-            m_active_data_sorter = sorters[0]->script_path;
-            LOG_INFO("No active data sorter set. Defaulting to: ", m_active_data_sorter.filename().string());
-        }
-    }
-    if (m_active_content_sorter.empty()) {
-        auto sorters = get_scripts_by_registration(ScriptRegistration::SORT_CONTENT);
-        if (!sorters.empty()) {
-            m_active_content_sorter = sorters[0]->script_path;
-            LOG_INFO("No active content sorter set. Defaulting to: ", m_active_content_sorter.filename().string());
-        }
-    }
-    if (m_active_content_verifier.empty()) {
-        auto verifiers = get_scripts_by_registration(ScriptRegistration::VERIFY);
-        if (!verifiers.empty()) {
-            m_active_content_verifier = verifiers[0]->script_path;
-            LOG_INFO("No active content verifier set. Defaulting to: ", m_active_content_verifier.filename().string());
-        }
-    }
 }
 
 void ScriptManager::load_options(const fs::path& options_file) {
@@ -152,10 +165,9 @@ void ScriptManager::load_options(const fs::path& options_file) {
             std::string key = trim(line.substr(0, eq_pos));
             std::string val = trim(line.substr(eq_pos + 1));
 
-            if (current_section == "config") { // NEW: Handle sorters
+            if (current_section == "config") {
                 LOG_INFO("Script Config: ", key, "=", val);
                 if (key == "active_data_sorter") {
-                    // Find the script with this filename and store its full path
                     for (const auto& script : m_scripts) {
                         if (script.script_path.filename().string() == val) {
                             m_active_data_sorter = script.script_path;
@@ -213,7 +225,6 @@ void ScriptManager::save_options(const fs::path& options_file) {
 
     LOG_INFO("Saving script options to ", options_file.string());
     
-    // --- NEW: Write config section ---
     file << "[config]\n";
     if (!m_active_data_sorter.empty()) file << "active_data_sorter=" << m_active_data_sorter.filename().string() << "\n";
     if (!m_active_content_sorter.empty()) file << "active_content_sorter=" << m_active_content_sorter.filename().string() << "\n";
@@ -240,24 +251,29 @@ void ScriptManager::save_options(const fs::path& options_file) {
 std::string ScriptManager::build_command_string(
     ScriptDefinition& script,
     const AppContext& ctx,
+    ArgType arg_type,
     const std::map<std::string, std::string>& extra_vars
 ) {
     std::string command = "\"" + script.script_path.string() + "\"";
-    std::string args = script.args_template;
+    
+    std::string args = "";
+    if (script.args_templates.count(arg_type)) {
+        args = script.args_templates[arg_type];
+    } else if (script.args_templates.count(ArgType::RUN)) {
+        args = script.args_templates[ArgType::RUN]; // Fallback to default ARGS
+    }
     
     std::map<std::string, std::string> variables;
-    // Base variables
     variables["$OPENMW_CFG"] = ctx.path_openmw_cfg.string();
-    variables["$OPENMW_ESMM_INI"] = (ctx.path_config_dir / "openmw_esmm.ini").string();
-    variables["$OPENMW_DIR"] = ctx.path_config_dir.string();
+    variables["$OPENMW_DIR"] = ctx.path_openmw_cfg.parent_path().string();
+    variables["$ESMM_CFG_DIR"] = ctx.path_esmm_cfg.string();
     variables["$MOD_DATA"] = ctx.path_mod_data.string();
+    variables["$MOD_ARCHIVES"] = ctx.path_mod_archives.string();
 
-    // Script-defined options
     for (const auto& opt : script.config_options) {
         variables["$" + opt.name] = opt.current_value;
     }
 
-    // Extra variables (e.g., from a runner)
     for (const auto& pair : extra_vars) {
         variables[pair.first] = pair.second;
     }
@@ -265,12 +281,12 @@ std::string ScriptManager::build_command_string(
     for (const auto& pair : variables) {
         size_t pos = args.find(pair.first);
         while (pos != std::string::npos) {
-            args.replace(pos, pair.first.length(), "\"" + pair.second + "\""); // Always quote paths
+            args.replace(pos, pair.first.length(), "\"" + pair.second + "\"");
             pos = args.find(pair.first, pos + pair.second.length() + 2);
         }
     }
 
-    command += " " + args; // stderr is handled by the runner
+    command += " " + args;
     return command;
 }
 
@@ -285,19 +301,28 @@ ScriptDefinition* ScriptManager::get_script_by_path(const fs::path& script_path)
 
 std::vector<ScriptDefinition*> ScriptManager::get_scripts_by_registration(ScriptRegistration registration) {
     std::vector<ScriptDefinition*> result;
-
     for (auto& script : m_scripts) {
         if (script.registration == registration) result.push_back(&script);
     }
-
     std::sort(result.begin(), result.end(), [](const ScriptDefinition* a, const ScriptDefinition* b) {
         return a->priority < b->priority;
     });
-
     return result;
 }
 
-
+std::vector<ScriptDefinition*> ScriptManager::get_scripts_by_type(ScriptType type) {
+    std::vector<ScriptDefinition*> result;
+    for (auto& script : m_scripts) {
+        if (script.type == type) {
+            result.push_back(&script);
+        }
+    }
+    // You might want to sort by title for display purposes
+    std::sort(result.begin(), result.end(), [](const ScriptDefinition* a, const ScriptDefinition* b) {
+        return a->title < b->title;
+    });
+    return result;
+}
 
 void ScriptManager::set_active_data_sorter_path(const fs::path& script_path) {
     m_active_data_sorter = script_path;

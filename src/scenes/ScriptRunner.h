@@ -37,7 +37,11 @@ public:
     virtual ~ScriptRunner() = default;
 
     // The main execution entry point
-    virtual void run(const std::map<std::string, std::string>& extra_vars = {}, bool use_temp_cfg = false);
+    virtual void run(
+        ArgType arg_type = ArgType::RUN,
+        const std::map<std::string, std::string>& extra_vars = {},
+        bool use_temp_cfg = false
+    );
 
     void request_cancellation();
     void kill_process();
@@ -46,9 +50,8 @@ public:
 
     bool is_finished() const { return m_is_finished; }
     const ScriptRunResult& get_result() const { return m_result; } 
-    ScriptDefinition& get_script() { return m_script; } // Needed for a clean implementation later
+    ScriptDefinition& get_script() { return m_script; }
 
-    // --- NEW Getters ---
     CancelState get_cancel_state() const { return m_cancel_state; }
     std::chrono::steady_clock::time_point get_cancel_request_time() const { return m_cancel_request_time; }
 
@@ -72,7 +75,6 @@ protected:
     bool m_is_finished = false;
     ScriptRunResult m_result;
 
-    // --- NEW Members ---
     CancelState m_cancel_state = CancelState::NONE;
     std::chrono::steady_clock::time_point m_cancel_request_time;
 };

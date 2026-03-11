@@ -11,6 +11,7 @@ struct AppContext;
 // Utility function declarations
 std::string getEnvVar(const std::string& name, const std::string& default_val);
 std::string trim(const std::string& s);
+fs::path find_executable_on_path(const std::string& name);
 
 // Utility functions that will be defined in the .cpp file
 std::string cleanModName(const std::string& filename);

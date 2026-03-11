@@ -12,13 +12,13 @@
 
 namespace fs = boost::filesystem;
 
-ScriptRunnerScene::ScriptRunnerScene(StateMachine& machine, std::shared_ptr<UIScriptRunner> owner, ScriptDefinition& script, bool use_temp_cfg)
-    : Scene(machine), m_owner(std::move(owner)), m_script(script), m_use_temp_cfg(use_temp_cfg) {}
+ScriptRunnerScene::ScriptRunnerScene(StateMachine& machine, std::shared_ptr<UIScriptRunner> owner, ScriptDefinition& script, bool use_temp_cfg, ArgType arg_type)
+    : Scene(machine), m_owner(std::move(owner)), m_script(script), m_use_temp_cfg(use_temp_cfg), m_arg_type(arg_type) {}
 
 void ScriptRunnerScene::on_enter() {
     m_owner->set_scene_ptr(this);
-    std::thread([owner = m_owner, use_temp_cfg = m_use_temp_cfg]() {
-        owner->run({}, use_temp_cfg); // Use the member flag
+    std::thread([owner = m_owner, use_temp_cfg = m_use_temp_cfg, arg_type = m_arg_type]() {
+        owner->run(arg_type, {}, use_temp_cfg);
     }).detach();
 }
 
@@ -39,7 +39,7 @@ void ScriptRunnerScene::render() {
         ImGui::Text("%s", m_progress.name.c_str());
         float progress_fraction = (m_progress.total > 0) ? (float)m_progress.step / m_progress.total : 0.0f;
         ImGui::ProgressBar(progress_fraction, ImVec2(-1, 0));
-        ImGui::Text("%5d / %5d: %s ", m_progress.step, m_progress.total, m_progress.message.c_str());
+        ImGui::Text("%s (%d / %d)", m_progress.message.c_str(), m_progress.step, m_progress.total);
         ImGui::Separator();
     }
 
@@ -104,7 +104,6 @@ void ScriptRunnerScene::render() {
         m_show_alert = false; // Reset trigger
     }
 
-    // Use a unique ID for the popup in case of multiple alerts
     if (ImGui::BeginPopupModal(popup_id.c_str(), NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextWrapped("%s", m_alert.message.c_str());
         ImGui::Separator();
