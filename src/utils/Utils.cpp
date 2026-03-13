@@ -63,7 +63,7 @@ std::string cleanModName(const std::string& filename) {
     }
 
     name = std::regex_replace(name, std::regex(R"(\s*\([^)]*\))"), "");
-    name = std::regex_replace(name, std::regex(R"([\s-.]+$)"), "");
+    name = std::regex_replace(name, std::regex(R"([\s.\-]+$)"), "");
     
     return name;
 }
