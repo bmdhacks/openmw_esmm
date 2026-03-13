@@ -99,7 +99,7 @@ void PreLaunchScene::handle_event(SDL_Event& e) {
         else if (e.cbutton.button == SDL_CONTROLLER_BUTTON_Y) { // Skip & Disable
             script->enabled = false;
             m_state_machine.get_engine().get_script_manager_mut()->save_options(
-                m_state_machine.get_context().path_esmm_cfg / "openmw_esmm_options.cfg"
+                m_state_machine.get_context().path_esmm_cfg / "options.ini"
             );
             m_current_script_index++;
             m_completed_scripts++;

@@ -21,7 +21,7 @@ void UtilitiesScene::on_enter() { }
 
 void UtilitiesScene::render() {
     ScriptManager& script_manager = *m_state_machine.get_engine().get_script_manager_mut();
-    const auto& options_path = m_state_machine.get_context().path_esmm_cfg / "openmw_esmm_options.cfg";
+    const auto& options_path = m_state_machine.get_context().path_esmm_cfg / "options.ini";
 
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
