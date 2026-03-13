@@ -220,6 +220,27 @@ void ModManagerScene::render() {
 
         // --- TAB 1: MOD CONFIGURATION ---
         if (ImGui::BeginTabItem("Mod Configuration")) {
+            if (ImGui::Button("Enable All")) {
+                for (auto& mod : mod_manager.mod_definitions) {
+                    mod.enabled = true;
+                    for (auto& group : mod.option_groups) {
+                        if (group.type == ModOptionGroup::SINGLE_CHOICE) {
+                            // Enable first option only for single-choice groups
+                            bool any_enabled = false;
+                            for (auto& option : group.options) {
+                                if (option.enabled) { any_enabled = true; break; }
+                            }
+                            if (!any_enabled && !group.options.empty())
+                                group.options.front().enabled = true;
+                        } else {
+                            for (auto& option : group.options)
+                                option.enabled = true;
+                        }
+                    }
+                }
+                state_changed = true;
+            }
+            ImGui::Separator();
             ImGui::BeginChild("ModTree", ImVec2(0, -50), true);
             
             for (auto& mod : mod_manager.mod_definitions) {
@@ -283,6 +304,14 @@ void ModManagerScene::render() {
         // --- TAB 2: CONTENT FILE ORDER ---
         if (ImGui::BeginTabItem("Content File Order")) {
             ImGui::Text("A to toggle, D-Pad to navigate, L1/R1 to reorder.");
+
+            ImGui::SameLine();
+            if (ImGui::Button("Enable All")) {
+                for (auto& content : mod_manager.active_content_files) {
+                    content.enabled = true;
+                    content.is_new = false;
+                }
+            }
     
             if (engine.has_active_sorter(ScriptRegistration::SORT_CONTENT)) {
                 ImGui::SameLine();
